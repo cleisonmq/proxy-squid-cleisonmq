@@ -1,0 +1,230 @@
+# ==============================================================================
+# SQUID PROXY - CONFIGURAÇÃO COMPLETA DE SEGURANÇA E HARDENING (squid.conf)
+# ==============================================================================
+
+# ==============================================================================
+# 1. PORTA DE ESCUTA E IDENTIFICAÇÃO DO PROXY
+# ==============================================================================
+
+# INFO: Define a porta de rede em que o Squid escuta os pedidos dos clientes.
+# Exemplo: É como o número da porta de entrada do edifício onde todos têm de se apresentar.
+# Se não for definido: O Squid não sabe onde receber pedidos e não inicia, ou assume a porta padrão 3128 em todas as interfaces de rede.
+http_port 3128
+
+# INFO: Define um nome genérico para o proxy e esconde a versão exata do software nas páginas de erro.
+# Exemplo: Se der erro 404, o utilizador vê apenas "proxy.interno.lan" sem detalhes do sistema.
+# Se não for definido: O Squid expõe o hostname real do servidor e a versão exata do software (ex: Squid/5.7), facilitando o reconhecimento por atacantes.
+visible_hostname proxy.interno.lan
+httpd_suppress_version_string on
+
+
+# ==============================================================================
+# 2. DEFINIÇÃO DE PORTAS SEGURAS E REGRAS HTTPS (CONNECT)
+# ==============================================================================
+
+# INFO: Lista as portas de destino autorizadas para navegação web comum (80=HTTP, 443=HTTPS).
+# Exemplo: Permite abrir páginas web normais e lojas online seguras.
+# Se não for definido: Não existe lista de portas seguras, deixando o proxy vulnerável a pedidos para portas arbitrárias.
+acl Safe_ports port 80 443
+
+# INFO: Define a porta autorizada para estabelecer túneis encriptados HTTPS (443).
+# Exemplo: Garante que túneis SSL só vão para o destino padrão de sites seguros.
+# Se não for definido: Não há como restringir que portas podem receber túneis encriptados.
+acl SSL_ports port 443
+
+# INFO: Identifica o método HTTP CONNECT, usado pelos browsers para criar túneis diretos em conexões HTTPS.
+# Exemplo: É o método que o browser usa para falar de forma cifrada com o banco.
+# Se não for definido: O Squid não consegue filtrar especificamente tentativas de abertura de túneis SSL.
+acl CONNECT method CONNECT
+
+# INFO: Bloqueia qualquer pedido direcionado a portas que não estejam na lista de portas seguras.
+# Exemplo: Se alguém tentar aceder a "site.com:6667" (porta de IRC/botnet), o proxy bloqueia de imediato.
+# Se não for definido: Utilizadores e malwares podem usar o proxy para comunicar com qualquer porta externa (jogos, P2P, serviços ilegais).
+http_access deny !Safe_ports
+
+# INFO: Bloqueia o método CONNECT para portas que não sejam a 443 (HTTPS).
+# Exemplo: Impede que um invasor use o proxy para abrir túneis SSH (porta 22) ou SMTP (porta 25) para a internet.
+# Se não for definido: O proxy pode ser transformado num "Open Proxy / Relay", permitindo envio de spam ou ataques a servidores externos mascarando a origem.
+http_access deny CONNECT !SSL_ports
+
+# INFO: Permite apenas os métodos HTTP comuns de navegação e bloqueia métodos perigosos (TRACE, TRACK, DELETE, PUT).
+# Exemplo: Evita ataques de Cross-Site Tracing (XST) que tentam roubar cookies via método TRACE.
+# Se não for definido: Todos os métodos HTTP são aceites, aumentando a superfície de ataque contra aplicações web.
+acl Valid_Methods method GET POST HEAD CONNECT
+http_access deny !Valid_Methods
+
+
+# ==============================================================================
+# 3. BLOQUEIO DE IP ESPECÍFICO
+# ==============================================================================
+
+# INFO: Cria uma regra com o IP de um computador que pretendemos isolar ou restringir.
+# Exemplo: Identifica o computador de testes ou uma máquina comprometida na rede (192.168.1.100).
+# Se não for definido: Esse computador específico é tratado como qualquer outro sem regra individual.
+#acl ip_bloqueado src 192.168.1.100
+
+# INFO: Proíbe totalmente a navegação na internet para o IP definido na regra.
+# Exemplo: O computador 192.168.1.100 não consegue abrir nenhuma página web.
+# Se não for definido: O computador continuará a ter acesso à internet de acordo com as restantes regras gerais.
+#http_access deny ip_bloqueado
+
+
+# ==============================================================================
+# 4. BLOQUEIO DE SITES E DOMÍNIOS (LISTAS EXTERNAS)
+# ==============================================================================
+
+# INFO: Lê uma lista de domínios proibidos a partir de um ficheiro de texto externo.
+# Exemplo: Bloqueia domínios inteiros listados no ficheiro, como "tiktok.com" ou "jogos.com".
+# Se não for definido: Não existe bloqueio por domínios via ficheiro externo.
+acl bad_url1 dstdomain "/etc/squid/bad-sites.acl"
+
+# INFO: Procura palavras e padrões proibidos dentro do URL completo através de expressões regulares.
+# Exemplo: Bloqueia endereços que contenham palavras como "/apostas/" ou "/torrent/".
+# Se não for definido: Não há filtragem de termos ou palavras-chave presentes no caminho dos links.
+acl bad_url2 url_regex "/etc/squid/bad-sites.acl"
+
+# INFO: Aplica o bloqueio imediato aos domínios listados no ficheiro bad-sites.acl.
+# Exemplo: O utilizador tenta abrir o domínio proibido e recebe uma página de acesso negado.
+# Se não for definido: A lista é lida em memória mas nenhuma ação de bloqueio é aplicada.
+http_access deny bad_url1
+
+# INFO: Aplica o bloqueio imediato caso o URL contenha os padrões proibidos.
+# Exemplo: O utilizador tenta abrir um link com termos restritos e a ligação é cortada.
+# Se não for definido: Os padrões do ficheiro não serão bloqueados.
+http_access deny bad_url2
+
+
+# ==============================================================================
+# 5. LIMITAÇÃO DE RECURSOS E PROTEÇÃO CONTRA DoS / SLOWLORIS
+# ==============================================================================
+
+# INFO: Limita o número máximo de conexões TCP abertas em simultâneo por um único IP.
+# Exemplo: Se um PC tentar abrir 80 conexões de uma vez (como um downloader agressivo), a partir da 41ª é travado.
+# Se não for definido: Um único computador pode abrir milhares de conexões, esgotando a memória RAM e CPU do proxy.
+acl max_conexoes_ip maxconn 40
+http_access deny max_conexoes_ip
+
+# INFO: Limita o tamanho máximo permitido para cabeçalhos, uploads (POST/PUT) e downloads.
+# Exemplo: Impede que um utilizador envie um anexo gigante de 500 MB se o limite for 20 MB.
+# Se não for definido: O Squid aceita pacotes e downloads de tamanho ilimitado, arriscando esgotar o disco e memória cache.
+request_header_max_size 64 KB
+request_body_max_size 20 MB
+reply_body_max_size 100 MB allow all
+
+# INFO: Encerra conexões inativas rapidamente para não manter recursos presos no servidor.
+# Exemplo: Se uma página web travar ou o utilizador fechar a tampa do portátil, a conexão fecha em 15 segundos.
+# Se não for definido: O Squid usa timeouts longos padrão (vários minutos), ficando vulnerável a ataques Slowloris onde atacantes esgotam as vagas do servidor.
+client_idle_pconn_timeout 15 seconds
+pconn_timeout 30 seconds
+request_timeout 30 seconds
+read_timeout 30 seconds
+
+
+# ==============================================================================
+# 6. PRIVACIDADE E OCULTAÇÃO DE CABEÇALHOS (ANONIMIZAÇÃO)
+# ==============================================================================
+
+# INFO: Desativa o cabeçalho HTTP "Via", ocultando a existência do proxy intermediário.
+# Exemplo: O site de destino não sabe se a empresa utiliza Squid ou outro proxy.
+# Se não for definido: O Squid envia o cabeçalho "Via: 1.1 proxy.interno.lan (squid/x.x)" revelando a topologia interna.
+via off
+
+# INFO: Remove o cabeçalho "X-Forwarded-For" que expõe o IP privado interno do cliente.
+# Exemplo: O site remoto vê apenas o IP público do firewall/proxy e nunca o IP 10.0.1.50 do utilizador.
+# Se não for definido: O IP privado da estação de trabalho é enviado para todos os sites visitados.
+forwarded_for delete
+
+# INFO: Remove cabeçalhos de pedido específicos para maior privacidade e segurança da rede.
+# Exemplo: Garante que nenhum cabeçalho residual de encaminhamento vaze detalhes da infraestrutura.
+# Se não for definido: Detalhes de cabeçalhos internos podem ser expostos aos servidores de destino.
+request_header_access X-Forwarded-For deny all
+request_header_access Via deny all
+request_header_access Server deny all
+
+
+# ==============================================================================
+# 7. VALIDAÇÃO DE SEGURANÇA SSL/TLS DE SAÍDA
+# ==============================================================================
+
+# INFO: Obriga o Squid a recusar ligação a sites cujo certificado SSL/TLS seja inválido, expirado ou forjado.
+# Exemplo: Se um site malicioso usar um certificado falso para intercetar dados bancários, o acesso é impedido.
+# Se não for definido: O utilizador pode navegar em sites com certificados fraudulentos sem aviso prévio do proxy.
+sslproxy_cert_error deny all
+
+# INFO: Força o uso de cifras criptográficas fortes e bloqueia protocolos obsoletos e inseguros (SSLv2, SSLv3, TLS 1.0, TLS 1.1).
+# Exemplo: Previne ataques conhecidos como POODLE ou BEAST que exploram cifras criptográficas antigas.
+# Se não for definido: O proxy pode negociar conexões inseguras usando protocolos vulneráveis já descontinuados.
+sslproxy_options NO_SSLv2,NO_SSLv3,NO_TLSv1,NO_TLSv1_1
+sslproxy_cipher HIGH:!aNULL:!eNULL:!EXPORT:!DES:!MD5:!PSK:!RC4:!3DES
+
+
+# ==============================================================================
+# 8. AUTENTICAÇÃO DE UTILIZADORES
+# ==============================================================================
+
+# INFO: Define o helper de autenticação (NCSA) e o ficheiro que contém a lista de utilizadores e passwords.
+# Exemplo: É como o porteiro que consulta a lista de credenciais autorizadas em /etc/squid/passwd.
+# Se não for definido: O Squid não terá módulo de autenticação configurado e não conseguirá autenticar utilizadores.
+auth_param basic program /usr/lib/squid/basic_ncsa_auth /etc/squid/passwd
+
+# INFO: Define a mensagem/título que surge na caixa de login do navegador do utilizador.
+# Exemplo: O browser mostra uma janela com o texto: "Proxy Autenticado".
+# Se não for definido: O navegador exibe uma mensagem genérica padrão do sistema sem identificação clara.
+auth_param basic realm Proxy Autenticado
+
+# INFO: Define o tempo de validade das credenciais na memória antes de exigir nova autenticação.
+# Exemplo: O colaborador coloca a senha às 09:00 e só volta a ser solicitado se ficar 2 horas inativo.
+# Se não for definido: O Squid usa o valor padrão (normalmente 2 horas), podendo exigir logins com frequência indesejada se não ajustado.
+auth_param basic credentialsttl 2 hours
+
+# INFO: Cria uma ACL que exige autenticação bem-sucedida para o pedido prosseguir.
+# Exemplo: Separa quem já validou a senha de quem ainda é anónimo.
+# Se não for definido: Não existe regra para validar se o utilizador forneceu credenciais válidas.
+acl autenticados proxy_auth REQUIRED
+
+
+# ==============================================================================
+# 9. REGRAS DE PERMISSÃO DE ACESSO
+# ==============================================================================
+
+# INFO: Define os blocos de endereços IP da rede local autorizada e o próprio servidor (localhost).
+# Exemplo: Computadores na rede 10.0.1.0/24 pertencem à rede corporativa autorizada.
+# Se não for definido: O proxy não reconhece a rede interna, impedindo a criação de regras direcionadas à LAN.
+acl localnet src 10.0.1.0/24
+acl localhost src 127.0.0.1/32 ::1
+
+# INFO: Autoriza consultas de diagnóstico do Cache Manager apenas a partir do próprio servidor e bloqueia para os restantes.
+# Exemplo: O administrador pode consultar métricas localmente, mas um cliente na rede não consegue espiar a cache.
+# Se não for definido: Qualquer utilizador na rede local pode consultar relatórios internos e estatísticas do Squid.
+http_access allow localhost manager
+http_access deny manager
+
+# INFO: Permite a saída para a internet se o pedido vier da rede local E o utilizador tiver feito login com sucesso.
+# Exemplo: O computador 10.0.1.25 que inseriu login/senha válidos consegue navegar livremente.
+# Se não for definido: Ninguém da rede local conseguirá navegar (ou navegará sem qualquer exigência de autenticação se houver regras genéricas).
+http_access allow localnet autenticados
+http_access allow localhost
+
+# INFO: Regra essencial de bloqueio final (Default Deny / Princípio do Menor Privilégio).
+# Exemplo: Qualquer pedido que não tenha cumprido as regras acima é imediatamente travado.
+# Se não for definido: O Squid aplica comportamentos padrão que podem inadvertidamente deixar portas ou acessos externos abertos.
+http_access deny all
+
+
+# ==============================================================================
+# 10. LOGS E CONTA DE SISTEMA
+# ==============================================================================
+
+# INFO: Regista todos os acessos dos utilizadores num ficheiro com formato seguro e detalhado para auditoria.
+# Exemplo: Guarda data, IP, código HTTP, site acedido e o nome do utilizador autenticado.
+# Se não for definido: Não há registo de auditoria ou é usado o formato básico, dificultando identificar quem acedeu a que conteúdo em incidentes de segurança.
+logformat secure_format %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt
+access_log /var/log/squid/access.log secure_format
+cache_log /var/log/squid/cache.log
+logfile_rotate 14
+
+# INFO: Faz o Squid rodar sob um utilizador de sistema sem privilégios (proxy).
+# Exemplo: Se o Squid sofrer um exploit, o atacante fica preso numa conta limitada e não ganha privilégios de root.
+# Se não for definido: O Squid tenta usar a conta compilada por defeito (normalmente nobody/proxy), mas se falhar pode rodar com privilégios excessivos.
+cache_effective_user proxy
+cache_effective_group proxy
