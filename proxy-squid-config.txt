@@ -109,7 +109,7 @@ http_access deny max_conexoes_ip
 # Se não for definido: O Squid aceita pacotes e downloads de tamanho ilimitado, arriscando esgotar o disco e memória cache.
 request_header_max_size 64 KB
 request_body_max_size 20 MB
-reply_body_max_size 100 MB allow all
+reply_body_max_size 100 MB all
 
 # INFO: Encerra conexões inativas rapidamente para não manter recursos presos no servidor.
 # Exemplo: Se uma página web travar ou o utilizador fechar a tampa do portátil, a conexão fecha em 15 segundos.
@@ -143,23 +143,7 @@ request_header_access Server deny all
 
 
 # ==============================================================================
-# 7. VALIDAÇÃO DE SEGURANÇA SSL/TLS DE SAÍDA
-# ==============================================================================
-
-# INFO: Obriga o Squid a recusar ligação a sites cujo certificado SSL/TLS seja inválido, expirado ou forjado.
-# Exemplo: Se um site malicioso usar um certificado falso para intercetar dados bancários, o acesso é impedido.
-# Se não for definido: O utilizador pode navegar em sites com certificados fraudulentos sem aviso prévio do proxy.
-sslproxy_cert_error deny all
-
-# INFO: Força o uso de cifras criptográficas fortes e bloqueia protocolos obsoletos e inseguros (SSLv2, SSLv3, TLS 1.0, TLS 1.1).
-# Exemplo: Previne ataques conhecidos como POODLE ou BEAST que exploram cifras criptográficas antigas.
-# Se não for definido: O proxy pode negociar conexões inseguras usando protocolos vulneráveis já descontinuados.
-sslproxy_options NO_SSLv2,NO_SSLv3,NO_TLSv1,NO_TLSv1_1
-sslproxy_cipher HIGH:!aNULL:!eNULL:!EXPORT:!DES:!MD5:!PSK:!RC4:!3DES
-
-
-# ==============================================================================
-# 8. AUTENTICAÇÃO DE UTILIZADORES
+# 7. AUTENTICAÇÃO DE UTILIZADORES
 # ==============================================================================
 
 # INFO: Define o helper de autenticação (NCSA) e o ficheiro que contém a lista de utilizadores e passwords.
@@ -184,14 +168,13 @@ acl autenticados proxy_auth REQUIRED
 
 
 # ==============================================================================
-# 9. REGRAS DE PERMISSÃO DE ACESSO
+# 8. REGRAS DE PERMISSÃO DE ACESSO
 # ==============================================================================
 
-# INFO: Define os blocos de endereços IP da rede local autorizada e o próprio servidor (localhost).
+# INFO: Define os blocos de endereços IP da rede local autorizada.
 # Exemplo: Computadores na rede 10.0.1.0/24 pertencem à rede corporativa autorizada.
 # Se não for definido: O proxy não reconhece a rede interna, impedindo a criação de regras direcionadas à LAN.
 acl localnet src 10.0.1.0/24
-acl localhost src 127.0.0.1/32 ::1
 
 # INFO: Autoriza consultas de diagnóstico do Cache Manager apenas a partir do próprio servidor e bloqueia para os restantes.
 # Exemplo: O administrador pode consultar métricas localmente, mas um cliente na rede não consegue espiar a cache.
@@ -212,7 +195,7 @@ http_access deny all
 
 
 # ==============================================================================
-# 10. LOGS E CONTA DE SISTEMA
+# 9. LOGS E CONTA DE SISTEMA
 # ==============================================================================
 
 # INFO: Regista todos os acessos dos utilizadores num ficheiro com formato seguro e detalhado para auditoria.
