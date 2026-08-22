@@ -201,7 +201,8 @@ http_access deny all
 # INFO: Regista todos os acessos dos utilizadores num ficheiro com formato seguro e detalhado para auditoria.
 # Exemplo: Guarda data, IP, código HTTP, site acedido e o nome do utilizador autenticado.
 # Se não for definido: Não há registo de auditoria ou é usado o formato básico, dificultando identificar quem acedeu a que conteúdo em incidentes de segurança.
-logformat secure_format %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt
+#logformat secure_format %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt
+logformat secure_format %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt "%{User-Agent}>h"
 access_log /var/log/squid/access.log secure_format
 cache_log /var/log/squid/cache.log
 logfile_rotate 14
