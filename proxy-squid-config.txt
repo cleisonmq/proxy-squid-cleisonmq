@@ -1,5 +1,5 @@
 # ==============================================================================
-# SQUID PROXY - CONFIGURAÇÃO COMPLETA DE SEGURANÇA E HARDENING (squid.conf)
+# Teste SQUID PROXY - CONFIGURAÇÃO COMPLETA DE SEGURANÇA E HARDENING (squid.conf)
 # ==============================================================================
 
 # ==============================================================================
@@ -73,25 +73,27 @@ http_access deny !Valid_Methods
 # 4. BLOQUEIO DE SITES E DOMÍNIOS (LISTAS EXTERNAS)
 # ==============================================================================
 
+# Lista 1: Apenas nomes de domínios inteiros
 # INFO: Lê uma lista de domínios proibidos a partir de um ficheiro de texto externo.
 # Exemplo: Bloqueia domínios inteiros listados no ficheiro, como "tiktok.com" ou "jogos.com".
 # Se não for definido: Não existe bloqueio por domínios via ficheiro externo.
-acl bad_url1 dstdomain "/etc/squid/bad-sites.acl"
+acl bad_domains dstdomain "/etc/squid/bad-domains.acl"
 
+# Lista 2: Palavras-chave e padrões no URL (expressões regulares)
 # INFO: Procura palavras e padrões proibidos dentro do URL completo através de expressões regulares.
 # Exemplo: Bloqueia endereços que contenham palavras como "/apostas/" ou "/torrent/".
 # Se não for definido: Não há filtragem de termos ou palavras-chave presentes no caminho dos links.
-acl bad_url2 url_regex "/etc/squid/bad-sites.acl"
+acl bad_patterns url_regex -i "/etc/squid/bad-patterns.acl"
 
 # INFO: Aplica o bloqueio imediato aos domínios listados no ficheiro bad-sites.acl.
 # Exemplo: O utilizador tenta abrir o domínio proibido e recebe uma página de acesso negado.
 # Se não for definido: A lista é lida em memória mas nenhuma ação de bloqueio é aplicada.
-http_access deny bad_url1
+http_access deny bad_domains
 
 # INFO: Aplica o bloqueio imediato caso o URL contenha os padrões proibidos.
 # Exemplo: O utilizador tenta abrir um link com termos restritos e a ligação é cortada.
 # Se não for definido: Os padrões do ficheiro não serão bloqueados.
-http_access deny bad_url2
+http_access deny bad_patterns
 
 
 # ==============================================================================
