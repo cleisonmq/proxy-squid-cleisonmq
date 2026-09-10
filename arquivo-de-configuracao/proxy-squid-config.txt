@@ -213,6 +213,7 @@ logformat secure_format %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a 
 access_log /var/log/squid/access.log secure_format
 cache_log /var/log/squid/cache.log
 logfile_rotate 14
+# Utilizada para redirecionamento dos logs para o sentinal e outros: access_log syslog:local4.info squid
 
 # INFO: Faz o Squid rodar sob um utilizador de sistema sem privilégios (proxy).
 # Exemplo: Se o Squid sofrer um exploit, o atacante fica preso numa conta limitada e não ganha privilégios de root.

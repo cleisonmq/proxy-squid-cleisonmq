@@ -1,0 +1,132 @@
+<form version="1.1">
+  <label>squid-server-cleisonmq</label>
+  <description>Controle e monitoramento de um servidor proxy-squid by #cleisonmq</description>
+  <fieldset submitButton="false">
+    <input type="dropdown" token="tok_host">
+      <label>Selecionar Servidor (Host)</label>
+      <choice value="*">Todos</choice>
+      <default>*</default>
+      <initialValue>*</initialValue>
+      <fieldForLabel>host</fieldForLabel>
+      <fieldForValue>host</fieldForValue>
+      <search>
+        <query>index=* OR index=_* | stats count by host</query>
+        <earliest>-24h@h</earliest>
+        <latest>now</latest>
+      </search>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <title>Monitoramento de métodos HTTP perigosos (TRACE / TRACK)</title>
+      <table>
+        <title>Requisições http</title>
+        <search>
+          <query>source="/var/log/squid/access.log" host="$tok_host$"
+| rex "\"(?&lt;agent&gt;[^\"]+)\"$"
+| rex "^(?&lt;ts&gt;\S+)\s+(?&lt;resp_time&gt;\S+)\s+(?&lt;src_ip&gt;\S+)\s+(?&lt;squid_status&gt;\S+)\s+(?&lt;bytes&gt;\S+)\s+(?&lt;http_method&gt;\S+)\s+(?&lt;uri&gt;\S+)\s+(?&lt;user&gt;\S+)"
+| table _time, host, src_ip, http_method, uri, user, squid_status, agent</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Conexões CONNECT para Portas Não Seguras (Anti-Proxy Relay)</title>
+      <table>
+        <title>Conexões em portas proibidas</title>
+        <search>
+          <query>source="/var/log/squid/access.log"
+| rex "^(?&lt;ts&gt;\S+)\s+(?&lt;resp_time&gt;\d+)\s+(?&lt;src_ip&gt;\S+)\s+(?&lt;squid_status&gt;\S+)\s+(?&lt;bytes&gt;\d+)\s+(?&lt;http_method&gt;\S+)\s+(?&lt;dest_host&gt;[^:]+):(?&lt;dest_port&gt;\d+)\s+(?&lt;user&gt;\S+)"
+| eval duracao_segundos = round(resp_time / 1000, 2)
+| eval status_acesso = case(
+    squid_status LIKE "%200", "SUCESSO (Túnel Estabelecido)",
+    squid_status LIKE "%403", "BLOQUEADO (Proibido/Regra Squid)",
+    squid_status LIKE "%407", "FALHA (Autenticação Necessária)",
+    squid_status LIKE "%503", "FALHA (Host/Porta Inacessível)",
+    true(), "OUTRO / DESCONHECIDO"
+)
+| table _time, src_ip, user, http_method, dest_host, dest_port, duracao_segundos, squid_status, status_acesso</query>
+          <earliest>0</earliest>
+          <latest></latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Prevenção de Fuga de Metadados e Topologia de Rede (Headers)</title>
+      <table>
+        <title>Vazamento de informações</title>
+        <search>
+          <query>source="/var/log/squid/access.log"
+| rex "^(?&lt;ts&gt;\S+)\s+(?&lt;resp_time&gt;\d+)\s+(?&lt;src_ip&gt;\S+)\s+(?&lt;squid_status&gt;\S+)\s+(?&lt;bytes_sent&gt;\d+)\s+(?&lt;http_method&gt;\S+)\s+(?&lt;uri&gt;\S+)\s+(?&lt;user&gt;\S+)\s+(?&lt;hierarchy&gt;\S+)\s+(?&lt;content_type&gt;[^\s\"]+)(\s+\"(?&lt;user_agent&gt;[^\"]*)\")?(\s+\"Via_Resp:(?&lt;resp_via&gt;[^\"]*)\")?(\s+\"Server_Resp:(?&lt;resp_server&gt;[^\"]*)\")?(\s+\"Cache_Resp:(?&lt;resp_xcache&gt;[^\"]*)\")?"
+| eval tipo_reconhecimento = case(
+    http_method IN ("HEAD"), "Reconhecimento de Cabeçalhos (HEAD/curl -I)",
+    match(uri, "(manager|cache_object)"), "Consulta Interna Squid Manager",
+    match(uri, "(httpbin|ifconfig\.me|beeceptor|ipinfo|icanhazip|whatismyip|checkip)"), "Auditoria de IP / Headers Externos",
+    true(), null()
+)
+| where isnotnull(tipo_reconhecimento)
+| eval cabecalhos_vazados = case(
+    (resp_via!="-" AND isnotnull(resp_via)) OR (resp_server!="-" AND isnotnull(resp_server)) OR (resp_xcache!="-" AND isnotnull(resp_xcache)), 
+    "ALERTA: Metadados Expostos (Via: ".coalesce(resp_via, "none")." | Server: ".coalesce(resp_server, "none")." | X-Cache: ".coalesce(resp_xcache, "none").")",
+    true(), "SEGURO (Nenhum metadado interno vazado)"
+)
+| table _time, src_ip, user, http_method, uri, tipo_reconhecimento, squid_status, bytes_sent, cabecalhos_vazados, user_agent</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Proteção contra Evasão por Domínio / Filtro de Reputação (Blacklist)</title>
+      <table>
+        <title>Acesso a dominios proibidos</title>
+        <search>
+          <query>source="/var/log/squid/access.log"
+| rex "^(?&lt;ts&gt;\S+)\s+(?&lt;resp_time&gt;\d+)\s+(?&lt;src_ip&gt;\S+)\s+(?&lt;squid_status&gt;\S+)\s+(?&lt;bytes_sent&gt;\d+)\s+(?&lt;http_method&gt;\S+)\s+(?&lt;uri&gt;\S+)\s+(?&lt;user&gt;\S+)"
+| where match(squid_status, "DENIED|403")
+| rex field=uri "^(?&lt;proto&gt;https?://)?(?&lt;dominio&gt;[^/:]+)"
+| eval motivo_bloqueio = case(
+    match(uri, "(\.exe|\.bat|\.vbs|/c2/|/malware/|shell\.php)"), "Padrão de URL Malicioso (bad-patterns)",
+    true(), "Domínio em Lista Negra (bad-domains)"
+)
+| table _time, src_ip, user, http_method, dominio, uri, motivo_bloqueio, squid_status
+| sort - _time</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Controlo de Conexões Simultâneas por Origem (Anti-Exaustão de Recursos)</title>
+      <chart>
+        <title>Volume de Requisições por IP (Anti-Exaustão / DoS)</title>
+        <search>
+          <query>source="/var/log/squid/access.log"
+| rex field=_raw "^\S+\s+\S+\s+(?&lt;src_ip&gt;\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
+| timechart span=10s count by src_ip</query>
+          <earliest>-60m@m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.drilldown">none</option>
+        <option name="refresh.display">progressbar</option>
+      </chart>
+    </panel>
+  </row>
+</form>
